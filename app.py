@@ -28,15 +28,53 @@ PRESETS = {"Custom": ("Any",) * 5,
 
 
 # ---------- core ----------
+LABELS = {"do_clone": "Voice Clone", "do_design": "Voice Design", "do_auto": "Auto Voice",
+          "do_expr": "Expressions", "do_lib": "Voice Library", "do_batch": "Batch Export"}
+
+def log(msg): print(f"[{time.strftime('%H:%M:%S')}] {msg}", flush=True)
+
 def safe(fn):
     @functools.wraps(fn)
     def w(*a, **k):
-        try: return fn(*a, **k)
-        except gr.Error: raise
-        except Exception:
+        name, t0 = LABELS.get(fn.__name__, fn.__name__), time.time()
+        log(f"> {name}: started")
+        try:
+            r = fn(*a, **k)
+            log(f"OK {name}: done in {time.time()-t0:.1f}s")
+            return r
+        except gr.Error as e:
+            log(f"!! {name}: {e}")
+            raise gr.Error(str(e.message), print_exception=False)
+        except Exception as e:
             logging.error(traceback.format_exc())
-            raise gr.Error("Processing failed. Please check your inputs and try again.")
+            log(f"!! {name}: failed ({type(e).__name__}: {e})")
+            raise gr.Error("Processing failed. Please check your inputs and try again.", print_exception=False)
     return w
+
+OPT = {"silence": "Standard"}
+
+def cut_silence(wav, mode):
+    """Trim silence at start/end; Standard/Strong also shorten long pauses."""
+    if mode == "Off" or wav.size < SR // 5: return wav
+    pad, max_pause, keep = {"Light": (0.08, None, None), "Standard": (0.10, 0.60, 0.35),
+                            "Strong": (0.08, 0.35, 0.20)}[mode]
+    fl = int(0.02 * SR); n = len(wav) // fl
+    if n < 3: return wav
+    fr = wav[:n * fl].reshape(n, fl)
+    rms = np.sqrt((fr ** 2).mean(axis=1) + 1e-12)
+    voiced = 20 * np.log10(rms / (rms.max() + 1e-12) + 1e-12) > -42
+    if not voiced.any(): return wav
+    idx = np.where(voiced)[0]; pf = int(pad / 0.02)
+    a, b = max(0, idx[0] - pf), min(n, idx[-1] + 1 + pf)
+    fr, voiced = fr[a:b], voiced[a:b]
+    if max_pause is None: return fr.reshape(-1)
+    mx, kp, out, i = int(max_pause / 0.02), int(keep / 0.02), [], 0
+    while i < len(voiced):
+        j = i
+        while j < len(voiced) and voiced[j] == voiced[i]: j += 1
+        out.append(fr[i:i + kp] if (not voiced[i] and j - i > mx) else fr[i:j])
+        i = j
+    return np.concatenate(out).reshape(-1)
 
 def split_text(t, n=350):
     out, cur = [], ""
@@ -50,7 +88,7 @@ def synth(text, steps, speed, **kw):
     t0, gap, parts = time.time(), np.zeros(int(0.15 * SR), np.float32), []
     for c in split_text(text):
         parts += [eng.generate(c, steps, speed, **kw), gap]
-    wav = np.concatenate(parts[:-1])
+    wav = cut_silence(np.concatenate(parts[:-1]), OPT["silence"])
     return (SR, wav), f"Generated {len(wav)/SR:.1f}s of audio in {time.time()-t0:.1f}s."
 
 def names(): return sorted(os.path.splitext(os.path.basename(p))[0] for p in glob.glob(f"{LIB}/*.pt"))
@@ -105,7 +143,7 @@ def do_batch(lines, mode, lib, ins, steps, speed, progress=gr.Progress()):
     zp, total = f"{OUT}/batch_{time.strftime('%Y%m%d_%H%M%S')}.zip", 0.0
     with zipfile.ZipFile(zp, "w") as z:
         for i, line in enumerate(progress.tqdm(items, desc="Rendering"), 1):
-            w = np.concatenate([eng.generate(c, steps, speed, **kw) for c in split_text(line)])
+            w = cut_silence(np.concatenate([eng.generate(c, steps, speed, **kw) for c in split_text(line)]), OPT["silence"])
             f = f"{OUT}/track_{i:03d}.wav"; sf.write(f, w, SR); z.write(f, os.path.basename(f)); os.remove(f)
             total += len(w) / SR
     return zp, f"Exported {len(items)} tracks, {total:.1f}s total."
@@ -144,6 +182,7 @@ audio,.waveform-container,.audio-container,.component-wrapper{background:#ffffff
 button.primary{background:linear-gradient(135deg,#6366f1,#4f46e5)!important;color:#fff!important;border:0!important;font-weight:600!important;border-radius:10px!important;box-shadow:0 4px 14px rgba(99,102,241,.3)!important}
 button.primary:hover{filter:brightness(1.08)}
 textarea,input{color:#1c2333!important}
+.empty .icon,.empty svg,[aria-label='Empty value'] svg{display:none!important}
 #foot{text-align:center;color:#98a2b3;font-size:.8rem;padding:14px 0}
 @media(max-width:640px){#hero{padding:18px}#hero h1{font-size:1.25rem}}
 """
@@ -163,6 +202,11 @@ with gr.Blocks(css=CSS, js=FORCE_DARK, title=APP, theme=gr.themes.Base(primary_h
     gr.HTML(f'<div id="hero"><h1>AS VOICE <span>STUDIO</span> V3</h1>'
             '<p>Multilingual voice cloning, design and production in one workspace.</p>'
             '<div class="chips"><i>600+ languages</i><i>Voice cloning</i><i>Voice design</i><i>Batch export</i></div></div>')
+    with gr.Row():
+        sil = gr.Radio(["Off", "Light", "Standard", "Strong"], value="Standard", label="Remove silence",
+                       info="Trims silence at the start and end. Standard and Strong also shorten long pauses.")
+    sil.change(lambda v: OPT.update(silence=v), sil, None)
+    demo.load(lambda: OPT["silence"], None, sil)
     with gr.Tabs():
         with gr.Tab("Voice Clone"):
             with gr.Row():
@@ -226,6 +270,7 @@ with gr.Blocks(css=CSS, js=FORCE_DARK, title=APP, theme=gr.themes.Base(primary_h
 - Use a clean 3-10 second reference clip without background noise.
 - Keep the reference and target language the same to avoid an accent.
 - Long scripts are split automatically at sentence boundaries.
+- Use **Remove silence** to trim dead air at the start and end and to shorten long pauses.
 - Write numbers as words for best pronunciation.
 
 **Responsible use:** clone only your own voice or voices you have permission to use. Impersonation and fraud are prohibited.""")
@@ -243,5 +288,9 @@ with gr.Blocks(css=CSS, js=FORCE_DARK, title=APP, theme=gr.themes.Base(primary_h
     b_b.click(do_batch, [b_t, b_md, b_l, b_i, b_s, b_sp], [b_o, b_m])
 
 if __name__ == "__main__":
-    demo.queue().launch(share=bool(os.path.isdir("/content")), show_api=os.getenv("AS_DEBUG") == "1", quiet=True,
-                        server_name="0.0.0.0" if not os.path.isdir("/content") else None)
+    colab = os.path.isdir("/content")
+    _, local_url, share_url = demo.queue().launch(
+        share=colab, inline=False, quiet=True, prevent_thread_lock=True,
+        show_api=os.getenv("AS_DEBUG") == "1", server_name=None if colab else "0.0.0.0")
+    print(f"* Running on {'public' if share_url else 'local'} URL: {share_url or local_url}\n", flush=True)
+    demo.block_thread()
