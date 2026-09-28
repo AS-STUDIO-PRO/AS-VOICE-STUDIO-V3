@@ -28,27 +28,14 @@ PRESETS = {"Custom": ("Any",) * 5,
 
 
 # ---------- core ----------
-LABELS = {"do_clone": "Voice Clone", "do_design": "Voice Design", "do_auto": "Auto Voice",
-          "do_expr": "Expressions", "do_lib": "Voice Library", "do_batch": "Batch Export"}
-
-def log(msg): print(f"[{time.strftime('%H:%M:%S')}] {msg}", flush=True)
-
 def safe(fn):
     @functools.wraps(fn)
     def w(*a, **k):
-        name, t0 = LABELS.get(fn.__name__, fn.__name__), time.time()
-        log(f"> {name}: started")
-        try:
-            r = fn(*a, **k)
-            log(f"OK {name}: done in {time.time()-t0:.1f}s")
-            return r
-        except gr.Error as e:
-            log(f"!! {name}: {e}")
-            raise gr.Error(str(e.message), print_exception=False)
-        except Exception as e:
+        try: return fn(*a, **k)
+        except gr.Error: raise
+        except Exception:
             logging.error(traceback.format_exc())
-            log(f"!! {name}: failed ({type(e).__name__}: {e})")
-            raise gr.Error("Processing failed. Please check your inputs and try again.", print_exception=False)
+            raise gr.Error("Processing failed. Please check your inputs and try again.")
     return w
 
 def split_text(t, n=350):
@@ -157,7 +144,6 @@ audio,.waveform-container,.audio-container,.component-wrapper{background:#ffffff
 button.primary{background:linear-gradient(135deg,#6366f1,#4f46e5)!important;color:#fff!important;border:0!important;font-weight:600!important;border-radius:10px!important;box-shadow:0 4px 14px rgba(99,102,241,.3)!important}
 button.primary:hover{filter:brightness(1.08)}
 textarea,input{color:#1c2333!important}
-.empty .icon,.empty svg,[aria-label='Empty value'] svg{display:none!important}
 #foot{text-align:center;color:#98a2b3;font-size:.8rem;padding:14px 0}
 @media(max-width:640px){#hero{padding:18px}#hero h1{font-size:1.25rem}}
 """
@@ -257,13 +243,5 @@ with gr.Blocks(css=CSS, js=FORCE_DARK, title=APP, theme=gr.themes.Base(primary_h
     b_b.click(do_batch, [b_t, b_md, b_l, b_i, b_s, b_sp], [b_o, b_m])
 
 if __name__ == "__main__":
-    colab = os.path.isdir("/content")
-    import io, contextlib
-    with contextlib.redirect_stdout(io.StringIO()):
-        _, local_url, share_url = demo.queue().launch(
-            share=colab, inline=False, quiet=True, prevent_thread_lock=True,
-            show_api=os.getenv("AS_DEBUG") == "1", server_name=None if colab else "0.0.0.0")
-    if colab and not share_url:
-        print("Public link could not be created. Stop this cell and run it again.", flush=True)
-    print(f"* Running on {'public' if share_url else 'local'} URL: {share_url or local_url}\n", flush=True)
-    demo.block_thread()
+    demo.queue().launch(share=bool(os.path.isdir("/content")), show_api=os.getenv("AS_DEBUG") == "1", quiet=True,
+                        server_name="0.0.0.0" if not os.path.isdir("/content") else None)
