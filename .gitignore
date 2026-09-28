@@ -1,0 +1,6 @@
+__pycache__/
+*.pt
+*.wav
+*.zip
+studio.log
+.gradio/
