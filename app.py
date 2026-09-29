@@ -51,7 +51,7 @@ def safe(fn):
             raise gr.Error("Processing failed. Please check your inputs and try again.", print_exception=False)
     return w
 
-OPT = {"silence": "Standard"}
+OPT = {"silence": "Standard", "pre": True}
 
 def cut_silence(wav, mode):
     """Trim silence at start/end; Standard/Strong also shorten long pauses."""
@@ -182,16 +182,25 @@ audio,.waveform-container,.audio-container,.component-wrapper{background:#ffffff
 button.primary{background:linear-gradient(135deg,#6366f1,#4f46e5)!important;color:#fff!important;border:0!important;font-weight:600!important;border-radius:10px!important;box-shadow:0 4px 14px rgba(99,102,241,.3)!important}
 button.primary:hover{filter:brightness(1.08)}
 textarea,input{color:#1c2333!important}
-.empty .icon,.empty svg,[aria-label='Empty value'] svg{display:none!important}
+.sw input[type=checkbox]{appearance:none;background-image:none!important;width:44px;height:26px;border-radius:13px;background:#cbd5e1;position:relative;cursor:pointer;transition:.2s}
+.sw input[type=checkbox]::after{content:"";position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;transition:.2s}
+.sw input[type=checkbox]:checked{background:#4f7cff}
+.sw input[type=checkbox]:checked::after{left:21px}
+.block:has(.wrap:not(.hide)) .empty *{visibility:hidden!important}
 #foot{text-align:center;color:#98a2b3;font-size:.8rem;padding:14px 0}
 @media(max-width:640px){#hero{padding:18px}#hero h1{font-size:1.25rem}}
 """
 FORCE_DARK = "() => { document.body.classList.remove('dark'); }"
 
+PRE, POST = [], []
+
 def qs(v=32):
     with gr.Row():
         s = gr.Slider(8, 64, value=v, step=1, label="Quality", info="16 fast · 32 balanced · 48+ studio")
         sp = gr.Slider(0.5, 1.8, value=1.0, step=0.05, label="Speaking speed")
+    with gr.Row():
+        PRE.append(gr.Checkbox(True, label="Preprocess Prompt", elem_classes="sw", info="Trims silence in the reference audio."))
+        POST.append(gr.Checkbox(True, label="Postprocess Output", elem_classes="sw", info="Removes long silences from the generated audio."))
     return s, sp
 
 def out_col(file=False):
@@ -202,11 +211,6 @@ with gr.Blocks(css=CSS, js=FORCE_DARK, title=APP, theme=gr.themes.Base(primary_h
     gr.HTML(f'<div id="hero"><h1>AS VOICE <span>STUDIO</span> V3</h1>'
             '<p>Multilingual voice cloning, design and production in one workspace.</p>'
             '<div class="chips"><i>600+ languages</i><i>Voice cloning</i><i>Voice design</i><i>Batch export</i></div></div>')
-    with gr.Row():
-        sil = gr.Radio(["Off", "Light", "Standard", "Strong"], value="Standard", label="Remove silence",
-                       info="Trims silence at the start and end. Standard and Strong also shorten long pauses.")
-    sil.change(lambda v: OPT.update(silence=v), sil, None)
-    demo.load(lambda: OPT["silence"], None, sil)
     with gr.Tabs():
         with gr.Tab("Voice Clone"):
             with gr.Row():
@@ -270,11 +274,17 @@ with gr.Blocks(css=CSS, js=FORCE_DARK, title=APP, theme=gr.themes.Base(primary_h
 - Use a clean 3-10 second reference clip without background noise.
 - Keep the reference and target language the same to avoid an accent.
 - Long scripts are split automatically at sentence boundaries.
-- Use **Remove silence** to trim dead air at the start and end and to shorten long pauses.
+- Use **Postprocess Output** to remove long silences from the result.
 - Write numbers as words for best pronunciation.
 
 **Responsible use:** clone only your own voice or voices you have permission to use. Impersonation and fraud are prohibited.""")
     gr.HTML(f'<div id="foot">{APP}</div>')
+
+    def _sync_pre(v): OPT.update(pre=v); eng.pre = v; return [v] * len(PRE)
+    def _sync_post(v): OPT.update(silence="Standard" if v else "Off"); eng.post = v; return [v] * len(POST)
+    for _c in PRE: _c.input(_sync_pre, _c, PRE)
+    for _c in POST: _c.input(_sync_post, _c, POST)
+    demo.load(lambda: [OPT["pre"]] * len(PRE) + [OPT["silence"] != "Off"] * len(POST), None, PRE + POST)
 
     c_b.click(do_clone, [c_t, c_r, c_rt, c_s, c_sp, c_n], [c_o, c_m, l_n, b_l])
     d_pr.change(lambda k: list(PRESETS[k]), d_pr, [d_g, d_a, d_p, d_st, d_ac])
@@ -290,7 +300,6 @@ with gr.Blocks(css=CSS, js=FORCE_DARK, title=APP, theme=gr.themes.Base(primary_h
 if __name__ == "__main__":
     colab = os.path.isdir("/content")
     _, local_url, share_url = demo.queue().launch(
-        share=colab, inline=False, quiet=True, prevent_thread_lock=True,
+        share=colab, inline=False, quiet=False, prevent_thread_lock=True,
         show_api=os.getenv("AS_DEBUG") == "1", server_name=None if colab else "0.0.0.0")
-    print(f"* Running on {'public' if share_url else 'local'} URL: {share_url or local_url}\n", flush=True)
     demo.block_thread()

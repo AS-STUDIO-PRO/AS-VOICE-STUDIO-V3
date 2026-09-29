@@ -12,6 +12,8 @@ DEMO = os.getenv("AS_DEMO_MODE") == "1"
 class Engine:
     def __init__(self):
         self.device = "demo"
+        self.pre = True
+        self.post = True
         if DEMO:
             return
         import torch
@@ -29,11 +31,16 @@ class Engine:
         kw = {"text": text, "num_step": int(steps), "speed": float(speed)}
         if prompt is not None: kw["voice_clone_prompt"] = prompt
         if instruct: kw["instruct"] = instruct
+        try:
+            from omnivoice import OmniVoiceGenerationConfig
+            kw["generation_config"] = OmniVoiceGenerationConfig(num_step=int(steps), postprocess_output=bool(self.post))
+        except Exception:
+            pass
         return np.asarray(self.m.generate(**kw)[0], dtype=np.float32).squeeze()
 
     def make_prompt(self, ref, ref_text=None):
         if DEMO: return {"ref": ref}
-        kw = {"ref_audio": ref}
+        kw = {"ref_audio": ref, "preprocess_prompt": bool(self.pre)}
         if ref_text: kw["ref_text"] = ref_text
         return self.m.create_voice_clone_prompt(**kw)
 

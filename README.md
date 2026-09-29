@@ -22,7 +22,7 @@
 | **Batch Export** | One line per file. Renders every line and downloads everything as a single ZIP. |
 | **Guide** | Live system status, tips and responsible-use notes. |
 
-Also included: automatic sentence-level splitting for long scripts, adjustable quality and speaking speed, silence removal (Off / Light / Standard / Strong), 24 kHz WAV output, a live activity log in the Colab cell, and a clean light interface that works on desktop and mobile.
+Also included: automatic sentence-level splitting for long scripts, adjustable quality and speaking speed, silence control with Preprocess Prompt and Postprocess Output toggles, 24 kHz WAV output, a live activity log in the Colab cell, and a clean light interface that works on desktop and mobile.
 
 ## 🚀 Quick start (Google Colab)
 
@@ -50,7 +50,7 @@ A CUDA GPU is strongly recommended. Set `AS_DEMO_MODE=1` to test the interface w
 - Quality: **16** = fast, **32** = balanced, **48+** = studio.
 - Write numbers as words (`123` → `one hundred twenty-three`) for correct pronunciation.
 - Long scripts are split at sentence boundaries automatically and joined with a short pause.
-- **Remove silence:** *Light* trims the start and end, *Standard* also shortens long pauses, *Strong* shortens them further.
+- **Preprocess Prompt** trims silence in the reference clip. **Postprocess Output** removes long silences from the generated audio.
 
 ## 🗂️ Project structure
 
