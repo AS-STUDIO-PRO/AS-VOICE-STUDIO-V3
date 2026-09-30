@@ -20,9 +20,10 @@
 | **Expressions** | Insert non-verbal tags such as `[laughter]` and `[sigh]` directly into your script. Supports phoneme-based pronunciation fixes. |
 | **Voice Library** | Reuse saved voices across sessions without re-uploading the reference. |
 | **Batch Export** | One line per file. Renders every line and downloads everything as a single ZIP. |
+| **Advanced settings** | Language (600+), fixed Duration, Guidance scale (CFG) and Denoise, shared by all tabs. Voice Clone also has an optional Instruct box, and Voice Design has extra accents and Chinese dialects. |
 | **Guide** | Live system status, tips and responsible-use notes. |
 
-Also included: automatic sentence-level splitting for long scripts, adjustable quality and speaking speed, silence control with Preprocess Prompt and Postprocess Output toggles, 24 kHz WAV output, a live activity log in the Colab cell, and a clean light interface that works on desktop and mobile.
+Also included: automatic sentence-level splitting for long scripts, adjustable quality and speaking speed, silence control (Preprocess Prompt / Postprocess Output toggles), advanced generation settings, a live processing timer in the Colab log, 24 kHz WAV output, a live activity log in the Colab cell, and a clean light interface that works on desktop and mobile.
 
 ## 🚀 Quick start (Google Colab)
 

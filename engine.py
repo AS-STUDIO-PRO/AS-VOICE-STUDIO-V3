@@ -14,6 +14,10 @@ class Engine:
         self.device = "demo"
         self.pre = True
         self.post = True
+        self.gs = 2.0
+        self.denoise = True
+        self.lang = None
+        self.dur = None
         if DEMO:
             return
         import torch
@@ -22,7 +26,7 @@ class Engine:
         self.device = "cuda:0" if torch.cuda.is_available() else "cpu"
         dtype = torch.float16 if self.device != "cpu" else torch.float32
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-            self.m = OmniVoice.from_pretrained("k2-fsa/OmniVoice", device_map=self.device, dtype=dtype)
+            self.m = OmniVoice.from_pretrained("k2-fsa/OmniVoice", device_map=self.device, dtype=dtype, load_asr=True)
 
     def generate(self, text, steps=32, speed=1.0, prompt=None, instruct=None):
         if DEMO:
@@ -31,9 +35,12 @@ class Engine:
         kw = {"text": text, "num_step": int(steps), "speed": float(speed)}
         if prompt is not None: kw["voice_clone_prompt"] = prompt
         if instruct: kw["instruct"] = instruct
+        if self.lang: kw["language"] = self.lang
+        if self.dur: kw["duration"] = float(self.dur)
         try:
             from omnivoice import OmniVoiceGenerationConfig
-            kw["generation_config"] = OmniVoiceGenerationConfig(num_step=int(steps), postprocess_output=bool(self.post))
+            kw["generation_config"] = OmniVoiceGenerationConfig(num_step=int(steps), postprocess_output=bool(self.post),
+                guidance_scale=float(self.gs), denoise=bool(self.denoise))
         except Exception:
             pass
         return np.asarray(self.m.generate(**kw)[0], dtype=np.float32).squeeze()

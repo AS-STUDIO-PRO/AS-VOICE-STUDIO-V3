@@ -1,4 +1,4 @@
-import functools, os, re, time, glob, zipfile, logging, traceback
+import threading, functools, os, re, time, glob, zipfile, logging, traceback
 import numpy as np, soundfile as sf, gradio as gr
 from engine import Engine, SR
 
@@ -18,7 +18,12 @@ GENDER = ["Any", "male", "female"]
 AGE = ["Any", "child", "teenager", "young adult", "middle-aged", "elderly"]
 PITCH = ["Any", "very low pitch", "low pitch", "moderate pitch", "high pitch", "very high pitch"]
 STYLE = ["Any", "whisper"]
-ACCENT = ["Any", "american accent", "british accent", "australian accent", "canadian accent", "indian accent"]
+ACCENT = ["Any", "american accent", "british accent", "australian accent", "canadian accent", "indian accent", "chinese accent", "korean accent", "portuguese accent", "russian accent", "japanese accent"] + [("Henan dialect", "河南话"), ("Shaanxi dialect", "陕西话"), ("Sichuan dialect", "四川话"), ("Guizhou dialect", "贵州话"), ("Yunnan dialect", "云南话"), ("Guilin dialect", "桂林话"), ("Jinan dialect", "济南话"), ("Shijiazhuang dialect", "石家庄话"), ("Gansu dialect", "甘肃话"), ("Ningxia dialect", "宁夏话"), ("Qingdao dialect", "青岛话"), ("Northeast dialect", "东北话")]
+try:
+    from omnivoice.utils.lang_map import LANG_NAMES, lang_display_name
+    LANGS = ["Auto"] + sorted(lang_display_name(n) for n in LANG_NAMES)
+except Exception:
+    LANGS = ["Auto"]
 PRESETS = {"Custom": ("Any",) * 5,
            "Narrator": ("male", "middle-aged", "low pitch", "Any", "Any"),
            "News Anchor": ("female", "young adult", "moderate pitch", "Any", "american accent"),
@@ -39,7 +44,16 @@ def safe(fn):
         name, t0 = LABELS.get(fn.__name__, fn.__name__), time.time()
         log(f"> {name}: started")
         try:
-            r = fn(*a, **k)
+            stop = threading.Event()
+            def _beat():
+                while not stop.wait(0.5):
+                    print(f"\r   processing | {time.time()-t0:.1f}s ", end="", flush=True)
+            threading.Thread(target=_beat, daemon=True).start()
+            try:
+                r = fn(*a, **k)
+            finally:
+                stop.set()
+                print("\r" + " " * 40 + "\r", end="", flush=True)
             log(f"OK {name}: done in {time.time()-t0:.1f}s")
             return r
         except gr.Error as e:
@@ -86,8 +100,13 @@ def split_text(t, n=350):
 def synth(text, steps, speed, **kw):
     if not (text or "").strip(): raise gr.Error("Please enter some text.")
     t0, gap, parts = time.time(), np.zeros(int(0.15 * SR), np.float32), []
-    for c in split_text(text):
-        parts += [eng.generate(c, steps, speed, **kw), gap]
+    chunks = split_text(text)
+    eng.dur = OPT.get("dur") if len(chunks) == 1 and (OPT.get("dur") or 0) > 0 else None
+    try:
+        for c in chunks:
+            parts += [eng.generate(c, steps, speed, **kw), gap]
+    finally:
+        eng.dur = None
     wav = cut_silence(np.concatenate(parts[:-1]), OPT["silence"])
     return (SR, wav), f"Generated {len(wav)/SR:.1f}s of audio in {time.time()-t0:.1f}s."
 
@@ -108,7 +127,7 @@ def do_clone(text, ref, rt, steps, speed, save_as):
     p, note = prompt_from(ref, rt), ""
     n = "".join(c for c in (save_as or "") if c.isalnum() or c in "-_ ").strip()
     if n: eng.save_prompt(p, f"{LIB}/{n}.pt"); note = f" Voice saved as '{n}'."
-    a, m = synth(text, steps, speed, prompt=p)
+    a, m = synth(text, steps, speed, prompt=p, instruct=OPT.get("cins") or None)
     return a, m + note, refresh(), refresh()
 
 @safe
@@ -187,6 +206,7 @@ textarea,input{color:#1c2333!important}
 .sw input[type=checkbox]:checked{background:#4f7cff}
 .sw input[type=checkbox]:checked::after{left:21px}
 .block:has(.wrap:not(.hide)) .empty *{visibility:hidden!important}
+.progress-text,.meta-text,.meta-text-center{visibility:visible!important;opacity:1!important}
 #foot{text-align:center;color:#98a2b3;font-size:.8rem;padding:14px 0}
 @media(max-width:640px){#hero{padding:18px}#hero h1{font-size:1.25rem}}
 """
@@ -211,6 +231,17 @@ with gr.Blocks(css=CSS, js=FORCE_DARK, title=APP, theme=gr.themes.Base(primary_h
     gr.HTML(f'<div id="hero"><h1>AS VOICE <span>STUDIO</span> V3</h1>'
             '<p>Multilingual voice cloning, design and production in one workspace.</p>'
             '<div class="chips"><i>600+ languages</i><i>Voice cloning</i><i>Voice design</i><i>Batch export</i></div></div>')
+    with gr.Accordion("Advanced settings (optional)", open=False):
+        with gr.Row():
+            adv_lang = gr.Dropdown(LANGS, value="Auto", label="Language", info="Auto detects the language.")
+            adv_dur = gr.Number(value=None, label="Duration (seconds)", info="Empty = use speed. Works for one short script (under 350 characters).")
+        with gr.Row():
+            adv_gs = gr.Slider(0.0, 4.0, value=2.0, step=0.1, label="Guidance scale (CFG)", info="Default 2.0.")
+            adv_dn = gr.Checkbox(True, label="Denoise", elem_classes="sw", info="Default on.")
+    adv_lang.change(lambda v: setattr(eng, "lang", None if v == "Auto" else v), adv_lang, None)
+    adv_dur.change(lambda v: OPT.update(dur=v), adv_dur, None)
+    adv_gs.change(lambda v: setattr(eng, "gs", v), adv_gs, None)
+    adv_dn.change(lambda v: setattr(eng, "denoise", v), adv_dn, None)
     with gr.Tabs():
         with gr.Tab("Voice Clone"):
             with gr.Row():
@@ -219,6 +250,9 @@ with gr.Blocks(css=CSS, js=FORCE_DARK, title=APP, theme=gr.themes.Base(primary_h
                     c_r = gr.Audio(type="filepath", sources=["upload", "microphone"], label="Reference voice (3-10 seconds)")
                     c_rt = gr.Textbox(label="Reference transcript (optional)", info="Leave empty to transcribe automatically.")
                     c_n = gr.Textbox(label="Save voice as (optional)")
+                    with gr.Accordion("Instruct (optional)", open=False):
+                        c_ins = gr.Textbox(label="Instruct", lines=2)
+                    c_ins.change(lambda v: OPT.update(cins=(v or "").strip()), c_ins, None)
                     c_s, c_sp = qs()
                     c_b = gr.Button("Generate", variant="primary")
                 with gr.Column(): c_o, c_m = out_col()
@@ -231,7 +265,7 @@ with gr.Blocks(css=CSS, js=FORCE_DARK, title=APP, theme=gr.themes.Base(primary_h
                         d_g = gr.Dropdown(GENDER, value="female", label="Gender"); d_a = gr.Dropdown(AGE, value="Any", label="Age")
                     with gr.Row():
                         d_p = gr.Dropdown(PITCH, value="Any", label="Pitch"); d_st = gr.Dropdown(STYLE, value="Any", label="Style")
-                    d_ac = gr.Dropdown(ACCENT, value="Any", label="Accent")
+                    d_ac = gr.Dropdown(ACCENT, value="Any", label="Accent / Dialect")
                     d_x = gr.Textbox(label="Additional attributes (optional)", info="Comma separated.")
                     d_s, d_sp = qs()
                     d_b = gr.Button("Generate", variant="primary")
@@ -286,16 +320,16 @@ with gr.Blocks(css=CSS, js=FORCE_DARK, title=APP, theme=gr.themes.Base(primary_h
     for _c in POST: _c.input(_sync_post, _c, POST)
     demo.load(lambda: [OPT["pre"]] * len(PRE) + [OPT["silence"] != "Off"] * len(POST), None, PRE + POST)
 
-    c_b.click(do_clone, [c_t, c_r, c_rt, c_s, c_sp, c_n], [c_o, c_m, l_n, b_l])
+    c_b.click(do_clone, [c_t, c_r, c_rt, c_s, c_sp, c_n], [c_o, c_m, l_n, b_l], show_progress="full")
     d_pr.change(lambda k: list(PRESETS[k]), d_pr, [d_g, d_a, d_p, d_st, d_ac])
-    d_b.click(do_design, [d_t, d_g, d_a, d_p, d_st, d_ac, d_x, d_s, d_sp], [d_o, d_m])
-    a_b.click(do_auto, [a_t, a_s, a_sp], [a_o, a_m])
+    d_b.click(do_design, [d_t, d_g, d_a, d_p, d_st, d_ac, d_x, d_s, d_sp], [d_o, d_m], show_progress="full")
+    a_b.click(do_auto, [a_t, a_s, a_sp], [a_o, a_m], show_progress="full")
     e_add.click(lambda t, g: f"{(t or '').rstrip()} {g}".strip(), [e_t, e_tg], e_t)
-    e_b.click(do_expr, [e_t, e_md, e_i, e_s, e_sp], [e_o, e_m])
-    l_b.click(do_lib, [l_n, l_t, l_s, l_sp], [l_o, l_m])
+    e_b.click(do_expr, [e_t, e_md, e_i, e_s, e_sp], [e_o, e_m], show_progress="full")
+    l_b.click(do_lib, [l_n, l_t, l_s, l_sp], [l_o, l_m], show_progress="full")
     l_r.click(refresh, None, l_n).then(refresh, None, b_l)
     l_d.click(do_del, l_n, [l_n, b_l, l_m])
-    b_b.click(do_batch, [b_t, b_md, b_l, b_i, b_s, b_sp], [b_o, b_m])
+    b_b.click(do_batch, [b_t, b_md, b_l, b_i, b_s, b_sp], [b_o, b_m], show_progress="full")
 
 if __name__ == "__main__":
     colab = os.path.isdir("/content")
