@@ -207,20 +207,29 @@ textarea,input{color:#1c2333!important}
 .sw input[type=checkbox]:checked::after{left:21px}
 .block:has(.wrap:not(.hide)) .empty *{visibility:hidden!important}
 .progress-text,.meta-text,.meta-text-center{visibility:visible!important;opacity:1!important}
+.sw{margin-bottom:10px!important}
 #foot{text-align:center;color:#98a2b3;font-size:.8rem;padding:14px 0}
 @media(max-width:640px){#hero{padding:18px}#hero h1{font-size:1.25rem}}
 """
 FORCE_DARK = "() => { document.body.classList.remove('dark'); }"
 
-PRE, POST = [], []
+PRE, POST, DN, LANG_C, DUR_C, GS_C = [], [], [], [], [], []
 
 def qs(v=32):
     with gr.Row():
         s = gr.Slider(8, 64, value=v, step=1, label="Quality", info="16 fast · 32 balanced · 48+ studio")
         sp = gr.Slider(0.5, 1.8, value=1.0, step=0.05, label="Speaking speed")
+    with gr.Accordion("Advanced settings", open=False):
+        with gr.Row():
+            LANG_C.append(gr.Dropdown(LANGS, value="Auto", label="Language", info="Auto detects the language."))
+            DUR_C.append(gr.Number(value=None, label="Duration (seconds)", info="Leave empty to use speaking speed. Applies to short scripts (under 350 characters)."))
+        GS_C.append(gr.Slider(0.0, 4.0, value=2.0, step=0.1, label="Guidance scale", info="Default 2.0."))
     with gr.Row():
-        PRE.append(gr.Checkbox(True, label="Preprocess Prompt", elem_classes="sw", info="Trims silence in the reference audio."))
+        PRE.append(gr.Checkbox(True, label="Preprocess Prompt", elem_classes="sw", info="Trims silence from the reference audio."))
+    with gr.Row():
         POST.append(gr.Checkbox(True, label="Postprocess Output", elem_classes="sw", info="Removes long silences from the generated audio."))
+    with gr.Row():
+        DN.append(gr.Checkbox(True, label="Denoise", elem_classes="sw", info="Enables the denoising step. Recommended."))
     return s, sp
 
 def out_col(file=False):
@@ -231,17 +240,6 @@ with gr.Blocks(css=CSS, js=FORCE_DARK, title=APP, theme=gr.themes.Base(primary_h
     gr.HTML(f'<div id="hero"><h1>AS VOICE <span>STUDIO</span> V3</h1>'
             '<p>Multilingual voice cloning, design and production in one workspace.</p>'
             '<div class="chips"><i>600+ languages</i><i>Voice cloning</i><i>Voice design</i><i>Batch export</i></div></div>')
-    with gr.Accordion("Advanced settings (optional)", open=False):
-        with gr.Row():
-            adv_lang = gr.Dropdown(LANGS, value="Auto", label="Language", info="Auto detects the language.")
-            adv_dur = gr.Number(value=None, label="Duration (seconds)", info="Empty = use speed. Works for one short script (under 350 characters).")
-        with gr.Row():
-            adv_gs = gr.Slider(0.0, 4.0, value=2.0, step=0.1, label="Guidance scale (CFG)", info="Default 2.0.")
-            adv_dn = gr.Checkbox(True, label="Denoise", elem_classes="sw", info="Default on.")
-    adv_lang.change(lambda v: setattr(eng, "lang", None if v == "Auto" else v), adv_lang, None)
-    adv_dur.change(lambda v: OPT.update(dur=v), adv_dur, None)
-    adv_gs.change(lambda v: setattr(eng, "gs", v), adv_gs, None)
-    adv_dn.change(lambda v: setattr(eng, "denoise", v), adv_dn, None)
     with gr.Tabs():
         with gr.Tab("Voice Clone"):
             with gr.Row():
@@ -319,6 +317,15 @@ with gr.Blocks(css=CSS, js=FORCE_DARK, title=APP, theme=gr.themes.Base(primary_h
     for _c in PRE: _c.input(_sync_pre, _c, PRE)
     for _c in POST: _c.input(_sync_post, _c, POST)
     demo.load(lambda: [OPT["pre"]] * len(PRE) + [OPT["silence"] != "Off"] * len(POST), None, PRE + POST)
+    def _sync_dn(v): eng.denoise = v; return [v] * len(DN)
+    def _sync_lang(v): eng.lang = None if v == "Auto" else v; return [v] * len(LANG_C)
+    def _sync_dur(v): OPT.update(dur=v); return [v] * len(DUR_C)
+    def _sync_gs(v): eng.gs = v; return [v] * len(GS_C)
+    for _c in DN: _c.input(_sync_dn, _c, DN)
+    for _c in LANG_C: _c.input(_sync_lang, _c, LANG_C)
+    for _c in DUR_C: _c.input(_sync_dur, _c, DUR_C)
+    for _c in GS_C: _c.input(_sync_gs, _c, GS_C)
+    demo.load(lambda: [eng.denoise] * len(DN) + [eng.lang or "Auto"] * len(LANG_C) + [OPT.get("dur")] * len(DUR_C) + [eng.gs] * len(GS_C), None, DN + LANG_C + DUR_C + GS_C)
 
     c_b.click(do_clone, [c_t, c_r, c_rt, c_s, c_sp, c_n], [c_o, c_m, l_n, b_l], show_progress="full")
     d_pr.change(lambda k: list(PRESETS[k]), d_pr, [d_g, d_a, d_p, d_st, d_ac])

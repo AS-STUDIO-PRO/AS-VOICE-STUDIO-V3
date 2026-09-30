@@ -20,7 +20,7 @@
 | **Expressions** | Insert non-verbal tags such as `[laughter]` and `[sigh]` directly into your script. Supports phoneme-based pronunciation fixes. |
 | **Voice Library** | Reuse saved voices across sessions without re-uploading the reference. |
 | **Batch Export** | One line per file. Renders every line and downloads everything as a single ZIP. |
-| **Advanced settings** | Language (600+), fixed Duration, Guidance scale (CFG) and Denoise, shared by all tabs. Voice Clone also has an optional Instruct box, and Voice Design has extra accents and Chinese dialects. |
+| **Advanced settings** | Language (600+ languages), fixed Duration and Guidance scale, shared by every tab. Denoise, Preprocess Prompt and Postprocess Output are separate toggles. Voice Clone also has an optional Instruct box, and Voice Design offers extra accents and Chinese dialects. |
 | **Guide** | Live system status, tips and responsible-use notes. |
 
 Also included: automatic sentence-level splitting for long scripts, adjustable quality and speaking speed, silence control (Preprocess Prompt / Postprocess Output toggles), advanced generation settings, a live processing timer in the Colab log, 24 kHz WAV output, a live activity log in the Colab cell, and a clean light interface that works on desktop and mobile.
@@ -29,7 +29,7 @@ Also included: automatic sentence-level splitting for long scripts, adjustable q
 
 1. Click the **Open in Colab** button above.
 2. Choose **Runtime → Change runtime type → T4 GPU**.
-3. Run **Cell 1** (installs everything).
+3. Run **Cell 1** and wait for the “Setup complete” message.
 4. Run **Cell 2** — the studio starts and a public link appears in the output. Open it and start creating.
 5. Keep Cell 2 running while you work. The live activity log shows every request.
 
